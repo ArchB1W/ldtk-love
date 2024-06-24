@@ -259,6 +259,7 @@ end
 --loads project settings
 ---@param file string File Path
 ---@param level integer? Optional Level Index
+---@return nil
 function ldtk:load(file, level)
     self.data = json.decode(love.filesystem.read(file))
     self.entities = {}
@@ -514,6 +515,7 @@ end
 
 --sets whether to invert the loop or not
 ---@param flipped boolean
+---@return nil
 function ldtk:setFlipped(flipped)
     self.flipped = flipped
 end
@@ -590,6 +592,7 @@ end
 ]]
 ---@param layer LDtkLayer
 ---@param level LDtkLevel?
+---@return nil
 function ldtk.onLayer(layer, level)
 
 end
