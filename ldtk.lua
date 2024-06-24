@@ -26,29 +26,19 @@
 
 
 
+---@alias Color [number, number, number, number?]
+
 ----------- Loading JSON ------------
 -- Remember to put json.lua in the same directory as ldtk.lua
 
 -- Current folder trick
 local currentFolder = (...):gsub('%.[^%.]+$', '')
 
-local jsonLoaded = false
-
-if json then
-    jsonLoaded = true
-end
-
--- Try to load json
-if not jsonLoaded then
-    jsonLoaded, json = pcall(require, "json")
-end
-
 -- Try to load relatively
-if not jsonLoaded then
-    jsonLoaded, json = pcall(require, currentFolder .. ".json")
-end
+local json = require(currentFolder .. ".json")
 
 local cache = {
+    ---@type LDtkTileset[]
     tilesets = {
 
     },
@@ -61,9 +51,13 @@ local cache = {
 }
 
 local ldtk = {
+    ---@type {string: integer}
     levels = {},
+    ---@type {integer: string}
     levelsNames = {},
+    ---@type {integer: LDtkTileset}
     tilesets = {},
+    ---@type integer?
     currentLevelIndex = nil,
     currentLevelName  = '',
     flipped = false,
@@ -88,11 +82,89 @@ local flipY = {
     [3] = -1
 }
 
+---@type Color
 local oldColor = {}
 
+
+--draws tiles
+---@param self LDtkLayer
+---@return nil
+local function draw_layer_object(self)
+    if self.visible then
+        --Saving old color
+        oldColor[1], oldColor[2], oldColor[3], oldColor[4] = love.graphics.getColor()
+
+        --Clear batch
+        cache.batch[self.tileset.uid]:clear()
+
+        -- Fill batch with quads
+         for i = 1, self._tilesLen do
+            cache.batch[self.tileset.uid]:add(
+                cache.quods[self.tileset.uid][self.tiles[i].t],
+                self.x + self.tiles[i].px[1] + self._offsetX[self.tiles[i].f],
+                self.y + self.tiles[i].px[2] + self._offsetY[self.tiles[i].f],
+                0,
+                flipX[self.tiles[i].f],
+                flipY[self.tiles[i].f]
+            )
+        end
+
+        --Setting layer color
+        love.graphics.setColor(self.color)
+        --Draw batch
+        love.graphics.draw(cache.batch[self.tileset.uid])
+
+        --Resotring old color
+        love.graphics.setColor(oldColor)
+    end
+end
+
+---@class LDtkTileset
+---@field package __cHei integer
+---@field package __cWid integer
+---@field cachedPixelData table
+---@field customData table
+---@field enumTags {enumValueId: string, tileIds: [integer]}[]
+---@field identifier string
+---@field padding integer
+---@field pxHei integer
+---@field pxWid integer
+---@field relPath string
+---@field savedSelections table
+---@field spacing integer
+---@field tags table
+---@field tagsSourceEnumUid integer
+---@field tileGridSize integer
+---@field uid integer
+
 --creates the layer object from data. only used here. ignore it
+---@param data table
+---@param auto boolean Whether the layer is an auto layer
 local function create_layer_object(self, data, auto)
-    
+    ---@class LDtkLayer
+    ---@field order integer Draw Order
+    ---@field package _offsetX {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
+    ---@field package _offsetY {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
+    ---@field package _tilesLen integer
+    ---@field tiles {a: number, d: number[], f: number, px: [integer, integer], src: [integer, integer], t: integer}[]
+    ---@field intGrid table?
+    ---@field relPath string Path Relative to main.lua
+    ---@field path string Path Relative to .ldtk file
+    ---@field id string
+    ---@field x integer
+    ---@field y integer
+    ---@field visible boolean
+    ---@field color Color
+    ---@field width integer
+    ---@field height integer
+    ---@field gridSize integer
+    ---@field tileset LDtkTileset
+    ---@field tilesetID integer
+    ---@diagnostic disable-next-line: redefined-local
+    local self = self
+
+    self.draw = draw_layer_object
+
     self._offsetX = {
         [0] = 0,
         [1] = data.__gridSize,
@@ -111,7 +183,7 @@ local function create_layer_object(self, data, auto)
     if auto then
         self.tiles = data.autoLayerTiles
         self.intGrid = data.intGridCsv
-    else 
+    else
         self.tiles = data.gridTiles
         self.intGrid = nil
     end
@@ -161,48 +233,21 @@ local function create_layer_object(self, data, auto)
     end
 end
 
---draws tiles
-local function draw_layer_object(self)
-    if self.visible then
-        --Saving old color
-        oldColor[1], oldColor[2], oldColor[3], oldColor[4] = love.graphics.getColor()
-
-        --Clear batch
-        cache.batch[self.tileset.uid]:clear()
-
-        -- Fill batch with quads
-         for i = 1, self._tilesLen do
-            cache.batch[self.tileset.uid]:add(
-                cache.quods[self.tileset.uid][self.tiles[i].t],
-                self.x + self.tiles[i].px[1] + self._offsetX[self.tiles[i].f],
-                self.y + self.tiles[i].px[2] + self._offsetY[self.tiles[i].f],
-                0,
-                flipX[self.tiles[i].f],
-                flipY[self.tiles[i].f]
-            )
-        end
-        
-        --Setting layer color 
-        love.graphics.setColor(self.color)
-        --Draw batch
-        love.graphics.draw(cache.batch[self.tileset.uid])
-
-        --Resotring old color
-        love.graphics.setColor(oldColor)
-    end
-end
-
 ----------- HELPER FUNCTIONS ------------
 --LDtk uses hex colors while LÖVE uses RGB (on a scale of 0 to 1)
 -- Converts hex color to RGB
+---@param color string Hex color formatted like "#ffffff"
+---@return Color
 function ldtk.hex2rgb(color)
-    local r = load("return {0x" .. color:sub(2, 3) .. ",0x" .. color:sub(4, 5) .. 
+    local r = load("return {0x" .. color:sub(2, 3) .. ",0x" .. color:sub(4, 5) ..
                 ",0x" .. color:sub(6, 7) .. "}")()
     return {r[1] / 255, r[2] / 255, r[3] / 255}
 end
 
 
 --Checks if a table is empty.
+---@param t table<any, any>
+---@return boolean
 local function is_empty(t)
     for _, _ in pairs(t) do
         return false
@@ -212,14 +257,16 @@ end
 
 ----------- LDTK Functions -------------
 --loads project settings
+---@param file string File Path
+---@param level integer? Optional Level Index
 function ldtk:load(file, level)
     self.data = json.decode(love.filesystem.read(file))
     self.entities = {}
     self.x, self.y = self.x or 0, self.x or 0
     self.countOfLevels = #self.data.levels
     self.countOfLayers = #self.data.defs.layers
-    
-    --creating a table with the path to .ldtk file separated by '/', 
+
+    --creating a table with the path to .ldtk file separated by '/',
     --used to get the path relative to main.lua instead of the .ldtk file. Ignore it.
     _path = {}
     for str in string.gmatch(file, "([^"..'/'.."]+)") do
@@ -245,6 +292,8 @@ function ldtk:load(file, level)
 end
 
 --getting relative file path to main.lua instead of .ldtk file
+---@param relPath string Path Relative to .ldtk file
+---@return string path Path Relative to main.lua
 function ldtk.getPath(relPath)
     local newPath = ''
     local newRelPath = {}
@@ -290,7 +339,19 @@ local types = {
                 props[p.__identifier] = p.__value
             end
 
-            ldtk.onEntity({
+            ---@class LDtkEntity
+            ---@field id string Entity ID
+            ---@field iid string LDtk Unique Instance ID
+            ---@field x integer X Position
+            ---@field y integer Y Position
+            ---@field width integer Configured Width in LDtk
+            ---@field height integer Configured Height in LDtk
+            ---@field px integer Pixot X
+            ---@field py integer Pivot Y
+            ---@field order integer Draw Order
+            ---@field visible boolean Visiblity
+            ---@field props table<string, any> Custom Fields defined in LDtk
+            local entity = {
                 id = value.__identifier,
                 iid = value.iid,
                 x = value.px[1],
@@ -302,13 +363,15 @@ local types = {
                 order = order,
                 visible = currentLayer.visible,
                 props = props
-            }, level)
+            }
+
+            ldtk.onEntity(entity, level)
         end
     end,
 
     Tiles = function (currentLayer, order, level)
         if not is_empty(currentLayer.gridTiles) then
-            local layer = {draw = draw_layer_object}
+            local layer = {}
             create_layer_object(layer, currentLayer, false)
             layer.order = order
             ldtk.onLayer(layer, level)
@@ -317,7 +380,7 @@ local types = {
 
     IntGrid = function (currentLayer, order, level)
         if not is_empty(currentLayer.autoLayerTiles) and currentLayer.__tilesetDefUid then
-            local layer = {draw = draw_layer_object}
+            local layer = {}
             create_layer_object(layer, currentLayer, true)
             layer.order = order
             ldtk.onLayer(layer, level)
@@ -326,7 +389,7 @@ local types = {
 
     AutoLayer = function (currentLayer, order, level)
         if not is_empty(currentLayer.autoLayerTiles) and currentLayer.__tilesetDefUid then
-            local layer = {draw = draw_layer_object}
+            local layer = {}
             create_layer_object(layer, currentLayer, true)
             layer.order = order
             ldtk.onLayer(layer, level)
@@ -335,7 +398,9 @@ local types = {
 }
 
 
---Load a level by its index (int)
+--Load a level by its index
+---@param index integer
+---@return nil
 function ldtk:goTo(index)
     if index > self.countOfLevels or index < 1 then
         error('There are no levels with that index.')
@@ -350,14 +415,22 @@ function ldtk:goTo(index)
     else
         layers = self.data.levels[index].layerInstances
     end
-    
+
     local levelProps = {}
     for _, p in ipairs(self.data.levels[index].fieldInstances) do
         levelProps[p.__identifier] = p.__value
     end
 
-
-
+    ---@class LDtkLevel
+    ---@field backgroundColor Color Background Color
+    ---@field id string Level ID
+    ---@field worldX integer X Position in World
+    ---@field worldY integer Y Position in World
+    ---@field width integer Width
+    ---@field height integer Height
+    ---@field neighbours {dir: string, levelIid: string}[] Neighbouring Levels
+    ---@field index integer Level Index
+    ---@field props table<string, any> Custom Level Properties
     local levelEntry = {
         backgroundColor = ldtk.hex2rgb(self.data.levels[index].__bgColor),
         id = self.data.levels[index].identifier,
@@ -372,80 +445,94 @@ function ldtk:goTo(index)
 
     self.onLevelLoaded(levelEntry)
 
-    
+
 
     if self.flipped then
         for i = self.countOfLayers, 1, -1 do
             types[layers[i].__type](layers[i], i, levelEntry)
-        end    
+        end
     else
         for i = 1, self.countOfLayers do
             types[layers[i].__type](layers[i], i, levelEntry)
         end
     end
-    
+
 
     self.onLevelCreated(levelEntry)
 end
 
---loads a level by its name (string)
+--loads a level by its name
+---@param name string
+---@return nil
 function ldtk:level(name)
     self:goTo(self.levels[tostring(name)] or error('There are no levels with the name: "' .. tostring(name) .. '".\nDid you save? (ctrl +s)'))
 end
 
 --loads next level
+---@return nil
 function ldtk:next()
     self:goTo(self.currentLevelIndex + 1 <= self.countOfLevels and self.currentLevelIndex + 1 or 1)
 end
 
 --loads previous level
+---@return nil
 function ldtk:previous()
     self:goTo(self.currentLevelIndex - 1 >= 1 and self.currentLevelIndex - 1 or self.countOfLevels)
 end
 
 --reloads current level
+---@return nil
 function ldtk:reload()
     self:goTo(self.currentLevelIndex)
 end
 
 --gets the index of a specific level
+---@param name string Level's Name
+---@return integer index Index of level by name
 function ldtk.getIndex(name)
     return ldtk.levels[name]
 end
 
 --get the name of a specific level
+---@param index integer Level Index
+---@return string name Name of level by index
 function ldtk.getName(index)
     return ldtk.levelsNames[index]
 end
 
 --gets the current level index
+---@return integer index Current level index
 function ldtk:getCurrent()
     return self.currentLevelIndex
 end
 
 --get the current level name
+---@return string name Current level name
 function ldtk:getCurrentName()
     return ldtk.levelsNames[self:getCurrent()]
 end
 
 --sets whether to invert the loop or not
+---@param flipped boolean
 function ldtk:setFlipped(flipped)
     self.flipped = flipped
 end
 
 --gets whether the loop is inverted or not
+---@return boolean flipped
 function ldtk:getFlipped()
     return self.flipped
 end
 
---remove the cahced tiles and quods. you may use it if you have multiple .ldtk files
+--remove the cached tiles and quods. you may use it if you have multiple .ldtk files
+---@return nil
 function ldtk.removeCache()
     cache = {
         tilesets = {
-            
+
         },
         quods = {
-            
+
         },
         batch = {
 
@@ -463,44 +550,48 @@ end
 
 --[[
     ldtk.onEntity is called when a new entity is created.
-    
+
     entity = {
-        id          = (string), 
-        x           = (int), 
-        y           = (int), 
-        width       = (int), 
-        height      = (int), 
+        id          = (string),
+        x           = (int),
+        y           = (int),
+        width       = (int),
+        height      = (int),
         visible     = (bool)
         px          = (int),    --pivot x
         py          = (int),    --pivot y
-        order       = (int), 
+        order       = (int),
         props       = (table)   --custom fields defined in LDtk
     }
-    
-    Remember that colors are saved in HEX format and not RGB. 
+
+    Remember that colors are saved in HEX format and not RGB.
     You can use ldtk ldtk.hex2rgb(color) to get an RGB table like {0.21, 0.57, 0.92}
 ]]
+---@param entity LDtkEntity
+---@param level LDtkLevel?
 function ldtk.onEntity(entity, level)
-    
+
 end
 
 --[[
-    ldtk.onLayer is called when a new layer is created.    
+    ldtk.onLayer is called when a new layer is created.
 
     layer:draw() --used to draw the layer
 
     layer = {
-        id          = (string), 
-        x           = (int), 
-        y           = (int), 
+        id          = (string),
+        x           = (int),
+        y           = (int),
         visible     = (bool)
         color       = (table),  --the color of the layer {r,g,b,a}. Usually used for opacity.
         order       = (int),
         draw        = (function) -- used to draw the layer
     }
 ]]
+---@param layer LDtkLayer
+---@param level LDtkLevel?
 function ldtk.onLayer(layer, level)
-    
+
 end
 
 --[[
@@ -509,19 +600,21 @@ end
     It's usually useful when you need to remove old objects and change some settings like background color
 
     level = {
-        id          = (string), 
-        worldX      = (int), 
-        worldY      = (int), 
-        width       = (int), 
-        height      = (int), 
+        id          = (string),
+        worldX      = (int),
+        worldY      = (int),
+        width       = (int),
+        height      = (int),
         props       = (table), --custom fields defined in LDtk
         backgroundColor = (table) --the background color of the level as defined in LDtk
     }
-    
+
     props table has the custom fields defined in LDtk
 ]]
+---@param levelData LDtkLevel
+---@return nil
 function ldtk.onLevelLoaded(levelData)
-    
+
 end
 
 --[[
@@ -530,17 +623,19 @@ end
     It's usually useful when you need to call a function or manipulate the objects after they are created.
 
     level = {
-        id          = (string), 
-        worldX      = (int), 
-        worldY      = (int), 
-        width       = (int), 
-        height      = (int), 
+        id          = (string),
+        worldX      = (int),
+        worldY      = (int),
+        width       = (int),
+        height      = (int),
         props       = (table), --custom fields defined in LDtk
         backgroundColor = (table) --the background color of the level as defined in LDtk
     }
 ]]
+---@param levelData LDtkLevel
+---@return nil
 function ldtk.onLevelCreated(levelData)
-    
+
 end
 
 
