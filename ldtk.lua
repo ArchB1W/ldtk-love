@@ -38,13 +38,14 @@ local currentFolder = (...):gsub('%.[^%.]+$', '')
 local json = require(currentFolder .. ".json")
 
 local cache = {
-    ---@type LDtkTileset[]
+    ---@type table<integer, love.Image>
     tilesets = {
 
     },
     quods = {
 
     },
+    ---@type table<integer, love.SpriteBatch>
     batch = {
 
     }
@@ -141,12 +142,21 @@ end
 ---@param data table
 ---@param auto boolean Whether the layer is an auto layer
 local function create_layer_object(self, data, auto)
+    ---@alias LDtkPoint [integer, integer]
+    ---@class LDtkTile
+    ---@field a number Alpha/opacity of the tile (0-1, defaults to 1)
+    ---@field d number[]
+    ---@field f number "Flip Bits", see https://ldtk.io/json/#ldtk-Tile;f
+    ---@field px LDtkPoint Pixel coordinates of the tile in the layer ([x,y] format)
+    ---@field src LDtkPoint Pixel coordinates of the tile in the tileset ([x,y] format)
+    ---@field t integer The Tile ID in the corresponding tileset
+
     ---@class LDtkLayer
     ---@field order integer Draw Order
     ---@field package _offsetX {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
     ---@field package _offsetY {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
     ---@field package _tilesLen integer
-    ---@field tiles {a: number, d: number[], f: number, px: [integer, integer], src: [integer, integer], t: integer}[]
+    ---@field tiles LDtkTile[]
     ---@field intGrid table?
     ---@field relPath string Path Relative to main.lua
     ---@field path string Path Relative to .ldtk file
