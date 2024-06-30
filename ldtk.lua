@@ -145,7 +145,7 @@ local function create_layer_object(self, data, auto)
     ---@alias LDtkPoint [integer, integer]
     ---@class LDtkTile
     ---@field a number Alpha/opacity of the tile (0-1, defaults to 1)
-    ---@field d number[]
+    ---@field private d number[] Internal data used by the editor.
     ---@field f number "Flip Bits", see https://ldtk.io/json/#ldtk-Tile;f
     ---@field px LDtkPoint Pixel coordinates of the tile in the layer ([x,y] format)
     ---@field src LDtkPoint Pixel coordinates of the tile in the tileset ([x,y] format)
