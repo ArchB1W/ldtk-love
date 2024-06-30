@@ -390,7 +390,7 @@ local types = {
     end,
 
     IntGrid = function (currentLayer, order, level)
-        if not is_empty(currentLayer.autoLayerTiles) and currentLayer.__tilesetDefUid then
+        if not is_empty(currentLayer.intGridCsv) and currentLayer.__tilesetDefUid then
             local layer = {}
             create_layer_object(layer, currentLayer, true)
             layer.order = order
