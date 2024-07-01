@@ -35,7 +35,10 @@
 local currentFolder = (...):gsub('%.[^%.]+$', '')
 
 -- Try to load relatively
-local json = require(currentFolder .. ".json")
+local json = require("json")
+if not json then
+    json = require(currentFolder .. ".json")
+end
 
 local cache = {
     ---@type table<integer, love.Image>
@@ -140,8 +143,10 @@ end
 
 --creates the layer object from data. only used here. ignore it
 ---@param data table
----@param auto boolean Whether the layer is an auto layer
-local function create_layer_object(self, data, auto)
+---@param order integer
+---@param type LDtkLayerTypes The layer type
+---@return LDtkLayer self
+local function create_layer_object(data, order, type)
     ---@alias LDtkPoint [integer, integer]
     ---@class LDtkTile
     ---@field a number Alpha/opacity of the tile (0-1, defaults to 1)
@@ -151,29 +156,43 @@ local function create_layer_object(self, data, auto)
     ---@field src LDtkPoint Pixel coordinates of the tile in the tileset ([x,y] format)
     ---@field t integer The Tile ID in the corresponding tileset
 
-    ---@class LDtkLayer
-    ---@field order integer Draw Order
+    ---@class LDtkBaseLayer
     ---@field package _offsetX {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
     ---@field package _offsetY {[0]: integer, [1]: integer, [2]: integer, [3]: integer}
-    ---@field package _tilesLen integer
-    ---@field tiles LDtkTile[]
-    ---@field intGrid table?
-    ---@field relPath string Path Relative to main.lua
-    ---@field path string Path Relative to .ldtk file
-    ---@field id string
-    ---@field x integer
-    ---@field y integer
-    ---@field visible boolean
-    ---@field color Color
-    ---@field width integer
-    ---@field height integer
-    ---@field gridSize integer
-    ---@field tileset LDtkTileset
-    ---@field tilesetID integer
-    ---@diagnostic disable-next-line: redefined-local
-    local self = self
+    ---@field order integer Draw Order
+    ---@field id string Identifier
+    ---@field x integer X Position
+    ---@field y integer Y Position
+    ---@field width integer Grid-based Width
+    ---@field height integer Grid-based Height
+    ---@field gridSize integer Size of Tile
+    ---@field type LDtkLayerTypes Layer Type
 
-    self.draw = draw_layer_object
+    ---@class LDtkTileLayer : LDtkBaseLayer
+    ---@field package _tilesLen integer The amount of tiles
+    ---@field relPath string Path of tileset relative to main.lua
+    ---@field path string Path of tileset relative to .ldtk file
+    ---@field tiles LDtkTile[] Generated Tiles
+    ---@field tileset LDtkTileset Tileset to use
+    ---@field tilesetID integer UID of Tileset
+    ---@field visible boolean Layer instance visibility
+    ---@field color Color
+    local tile_placeholder = {
+        draw = draw_layer_object
+    }
+
+    ---@class LDtkIntGridLayer : LDtkBaseLayer
+    ---@field intGrid table A list of all values in the IntGrid layer, stored in CSV format (Comma Separated Values). Order is from left to right, and top to bottom (ie. first row from left to right, followed by second row, etc). 0 means "empty cell" and IntGrid values start at 1.
+
+    ---@class LDtkAutoLayer : LDtkIntGridLayer
+
+    ---@alias LDtkLayer LDtkAutoLayer | LDtkIntGridLayer | LDtkTileLayer
+
+    local self = {
+        draw = draw_layer_object,
+        order = order,
+        type = type,
+    }
 
     self._offsetX = {
         [0] = 0,
@@ -190,12 +209,22 @@ local function create_layer_object(self, data, auto)
     }
 
     --getting tiles information
-    if auto then
+    self.intGrid = data.intGridCsv
+    if type == "AutoLayer" then
         self.tiles = data.autoLayerTiles
-        self.intGrid = data.intGridCsv
-    else
+    elseif type == "Tiles" then
         self.tiles = data.gridTiles
-        self.intGrid = nil
+    end
+
+    self.id = data.__identifier
+    self.x, self.y = data.__pxTotalOffsetX, data.__pxTotalOffsetY
+
+    self.width = data.__cWid
+    self.height = data.__cHei
+    self.gridSize = data.__gridSize
+
+    if not (type == "AutoLayer" or type == "Tiles") then
+        return self
     end
 
     self._tilesLen = #self.tiles
@@ -203,14 +232,8 @@ local function create_layer_object(self, data, auto)
     self.relPath = data.__tilesetRelPath
     self.path = ldtk.getPath(data.__tilesetRelPath)
 
-    self.id = data.__identifier
-    self.x, self.y = data.__pxTotalOffsetX, data.__pxTotalOffsetY
     self.visible = data.visible
     self.color = {1, 1, 1, data.__opacity}
-
-    self.width = data.__cWid
-    self.height = data.__cHei
-    self.gridSize = data.__gridSize
 
     --getting tileset information
     self.tileset = ldtk.tilesets[data.__tilesetDefUid]
@@ -241,6 +264,8 @@ local function create_layer_object(self, data, auto)
             end
         end
     end
+
+    return self
 end
 
 ----------- HELPER FUNCTIONS ------------
@@ -340,10 +365,18 @@ function ldtk.getPath(relPath)
     return newPath
 end
 
+---@alias LDtkLayerDefTypes  "AutoLayer" | "Entities" | "IntGrid" | "Tiles"
+---@alias LDtkLayerTypes  "AutoLayer" | "IntGrid" | "Tiles"
 
-local types = {
-    Entities = function (currentLayer, order, level)
-        for _, value in ipairs(currentLayer.entityInstances) do
+---@param layerDef table
+---@param order integer
+---@param level LDtkLevel
+local function layer_handler(layerDef, order, level)
+    ---@type LDtkLayerDefTypes
+    local type = layerDef.__type
+
+    if type == "Entities" then
+        for _, value in ipairs(layerDef.entityInstances) do
             local props = {}
 
             for _, p in ipairs(value.fieldInstances) do
@@ -372,42 +405,18 @@ local types = {
                 px = value.__pivot[1],
                 py = value.__pivot[2],
                 order = order,
-                visible = currentLayer.visible,
+                visible = layerDef.visible,
                 props = props
             }
 
             ldtk.onEntity(entity, level)
         end
-    end,
-
-    Tiles = function (currentLayer, order, level)
-        if not is_empty(currentLayer.gridTiles) then
-            local layer = {}
-            create_layer_object(layer, currentLayer, false)
-            layer.order = order
-            ldtk.onLayer(layer, level)
-        end
-    end,
-
-    IntGrid = function (currentLayer, order, level)
-        if not is_empty(currentLayer.intGridCsv) and currentLayer.__tilesetDefUid then
-            local layer = {}
-            create_layer_object(layer, currentLayer, true)
-            layer.order = order
-            ldtk.onLayer(layer, level)
-        end
-    end,
-
-    AutoLayer = function (currentLayer, order, level)
-        if not is_empty(currentLayer.autoLayerTiles) and currentLayer.__tilesetDefUid then
-            local layer = {}
-            create_layer_object(layer, currentLayer, true)
-            layer.order = order
-            ldtk.onLayer(layer, level)
-        end
+    else
+        ---@cast type LDtkLayerTypes
+        local layer = create_layer_object(layerDef, order, type)
+        ldtk.onLayer(layer, level)
     end
-}
-
+end
 
 --Load a level by its index
 ---@param index integer
@@ -460,11 +469,11 @@ function ldtk:goTo(index)
 
     if self.flipped then
         for i = self.countOfLayers, 1, -1 do
-            types[layers[i].__type](layers[i], i, levelEntry)
+            layer_handler(layers[i], i, levelEntry)
         end
     else
         for i = 1, self.countOfLayers do
-            types[layers[i].__type](layers[i], i, levelEntry)
+            layer_handler(layers[i], i, levelEntry)
         end
     end
 
