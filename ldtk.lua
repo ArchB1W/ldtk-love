@@ -34,10 +34,20 @@
 -- Current folder trick
 local currentFolder = (...):gsub('%.[^%.]+$', '')
 
+---@diagnostic disable-next-line: undefined-global
+local jsonLoaded = json ~= nil
+
+---@diagnostic disable-next-line: undefined-global
+local json = json
+
+-- Try to load json
+if not jsonLoaded then
+    jsonLoaded, json = pcall(require, "json")
+end
+
 -- Try to load relatively
-local json = require("json")
-if not json then
-    json = require(currentFolder .. ".json")
+if not jsonLoaded then
+    jsonLoaded, json = pcall(require, currentFolder .. ".json")
 end
 
 local cache = {
